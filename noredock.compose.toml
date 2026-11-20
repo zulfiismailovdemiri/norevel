@@ -1,0 +1,81 @@
+# norevel - Laravel on noredock.   Start: noredock compose up
+# Needs noredock >= 1.5 (php, composer, node, postgres, mailpit images; services without a port).
+name = "norevel"
+
+# PostgreSQL 18 (data in ~/.noredock/volumes/norevel-db)
+[services.db]
+runtime = "postgres"
+image = "postgres:18.7.0"
+database = "norevel"
+isolation = "sandbox"
+network = "local"
+
+# Mailpit: every mail Laravel sends lands here (inbox port: `noredock compose ps`)
+[services.mail]
+runtime = "mailpit"
+image = "mailpit:1.34.0"
+isolation = "sandbox"
+network = "local"
+
+# The Laravel app (php artisan serve)
+[services.app]
+dir = "app"
+image = ["php:8.5.8", "composer:2.11.2"]
+port = 8300
+host = "127.0.0.1"
+# first start of a fresh clone: .env + app key, PHP packages; every start: database migrations
+prepare = "(test -d vendor || composer install) && (test -f .env || (cp .env.example .env && php artisan key:generate --no-interaction)) && php artisan migrate --force --no-interaction"
+command = "php artisan serve --host={host} --port={port} --no-reload"
+healthcheck = "/up"
+depends_on = ["db", "mail"]
+env_file = "noredock.env"
+isolation = "sandbox"
+network = "local"
+
+[services.app.env]   # + noredock.env
+DB_PORT = "${db.port}"
+MAIL_PORT = "${mail.ports.smtp}"
+
+# Queue worker: no port; restarts when PHP code or .env change (workers keep old code in memory)
+[services.queue]
+dir = "app"
+image = "php:8.5.8"
+port = 0
+command = "php artisan queue:work --tries=3 --sleep=1"
+restart = "on-failure"
+watch = ["app/*.php", "config/*.php", "routes/*.php", ".env"]
+watch_ignore = ["vendor", "node_modules", "storage", "bootstrap"]
+depends_on = ["app", "mail"]
+env_file = "noredock.env"
+isolation = "sandbox"
+network = "local"
+
+[services.queue.env]   # + noredock.env
+DB_PORT = "${db.port}"
+MAIL_PORT = "${mail.ports.smtp}"
+
+# Scheduler (runs routes/console.php schedules every minute): no port
+[services.scheduler]
+dir = "app"
+image = "php:8.5.8"
+port = 0
+command = "php artisan schedule:work"
+restart = "on-failure"
+depends_on = ["app"]
+env_file = "noredock.env"
+isolation = "sandbox"
+network = "local"
+
+[services.scheduler.env]   # + noredock.env
+DB_PORT = "${db.port}"
+
+# Vite dev server: CSS/JS with hot reload (laravel-vite-plugin writes public/hot)
+[services.vite]
+dir = "app"
+image = "node:26.13.1"
+port = 5173
+host = "127.0.0.1"
+prepare = "test -d node_modules || npm install"
+command = "npx vite --host {host} --port {port} --strictPort"
+isolation = "sandbox"
+network = "local"

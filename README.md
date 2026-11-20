@@ -83,7 +83,7 @@ noredock compose exec app php artisan migrate
 noredock compose exec app composer require laravel/sanctum
 noredock compose exec vite npm install -D some-package
 noredock compose exec db psql -h localhost -U postgres norevel
-noredock compose exec app php artisan test      # tests use SQLite in memory (phpunit.xml)
+noredock compose exec app php artisan test      # tests: SQLite in memory, never the dev database
 noredock compose restart queue                  # e.g. after installing packages
 noredock compose down                           # stop (add -v to delete the database)
 ```
@@ -107,6 +107,11 @@ noredock run php composer -- composer create-project laravel/laravel app
 
 ## Notes and limits
 
+- **Tests and the database:** noredock sets `DB_CONNECTION=pgsql` for the app. PHPUnit's `<env>`
+  values only apply when a variable isn't set yet, and Laravel reads `$_SERVER` first. So
+  `app/phpunit.xml` forces `DB_CONNECTION`/`DB_DATABASE` with both `<env force="true">` and
+  `<server force="true">`. That way tests always use SQLite in memory and `RefreshDatabase` can
+  never wipe your development data. `tests/Feature/TestDatabaseTest.php` guards this.
 - `php artisan serve` uses PHP's built-in server: fine for development, not for production.
 - The PHP image has no `intl` extension. Laravel works without it, but helpers like
   `Number::format()` / `Number::currency()` need it.
